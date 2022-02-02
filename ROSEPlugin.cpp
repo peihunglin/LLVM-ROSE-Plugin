@@ -34,7 +34,7 @@ public:
     ROSE_INITIALIZE;
     std::vector<std::string> roseFEArgs{"","-rose:skipfinalCompileStep",InFile.str()};
     project = ::frontend(roseFEArgs); 
-    ::backend(project);
+    std::cout << "In Plugin: generated sgproject:" << project << std::endl;
 
  }
 

@@ -41,3 +41,16 @@ if(LLVM_ENABLE_PLUGINS AND (WIN32 OR CYGWIN))
     clangFrontend
     )
 endif()
+
+
+add_library(ROSEPass MODULE ROSEPass.cpp)
+target_compile_features(ROSEPass PRIVATE cxx_range_for cxx_auto_type)
+target_link_libraries(ROSEPass rose -L${ROSE_ROOT}/lib)
+
+if(APPLE)
+    set_target_properties(ROSEPass PROPERTIES
+        LINK_FLAGS "-undefined dynamic_lookup"
+    )
+endif(APPLE)
+
+
