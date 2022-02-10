@@ -28,7 +28,11 @@ endif()
 
 include_directories(${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS} ${ROSE_ROOT}/include/rose ${Boost_INCLUDE_DIRS})
 add_library(ROSEPlugin MODULE ROSEPlugin.cpp)
-target_link_libraries(ROSEPlugin clangAST clangBasic clangFrontend rose -L${ROSE_ROOT}/lib)
+if (APPLE)
+   target_link_libraries(ROSEPlugin clangAST clangBasic clangFrontend rose -L${ROSE_ROOT}/lib)
+else ()
+   target_link_libraries(ROSEPlugin  rose -L${ROSE_ROOT}/lib)
+endif ()
 #target_link_libraries(ROSEPlugin clangAST clangBasic clangFrontend)
 
 if(LLVM_ENABLE_PLUGINS AND (WIN32 OR CYGWIN))
