@@ -1,10 +1,4 @@
-#include "llvm/IR/LegacyPassManager.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/PassPlugin.h"
-#include "llvm/Support/raw_ostream.h"
-#include "rose.h"
-
-using namespace llvm;
+#include "LLVMRosePass.hpp"
 
 extern SgProject* project;
 
@@ -13,22 +7,196 @@ extern SgProject* project;
 //-----------------------------------------------------------------------------
 // No need to expose the internals of the pass to the outside world - keep
 // everything in an anonymous namespace.
-namespace {
 
+using namespace LLVMRosePass;
 
 // New PM implementation
-struct ROSEPass : PassInfoMixin<ROSEPass> {
-  // Main entry point, takes IR unit to run the pass on (&F) and the
-  // corresponding pass manager (to be queried if need be)
-  PreservedAnalyses run(Function &F, FunctionAnalysisManager &) {
-    std::cout << "In LLVM Pass: sgproject:" << project << std::endl;
-    std::cout << "In LLVM Pass: calling unparser:"  << std::endl;
-    ::backend(project);
+PreservedAnalyses ROSEPass::run(Module &M, ModuleAnalysisManager &MAM) {
 
-    return PreservedAnalyses::all();
+  std::cout <<"Module info:" << M.getInstructionCount ()  << std::endl;
+  auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
+ 
+  auto  &funcList = M.getFunctionList();
+  Module::global_iterator gv_iter;
+  Module::iterator func_iter;
+  std::string header = "==================================================";
+
+  for (gv_iter = M.global_begin(); gv_iter != M.global_end(); gv_iter++)
+  {
+     outs() << header << "\n";
+     runOnGVariable(*gv_iter);
   }
-};
-} // namespace
+  
+  // Functions
+  for (func_iter = M.begin(); func_iter != M.end(); func_iter++)
+  {
+     outs() << header << "\n";
+     runOnFunction(*func_iter, FAM);
+  }
+/* 
+  for(auto f=funcList.begin(); f != funcList.end(); ++f)
+  {
+   Function &func = *f; 
+   AAResults& AAR = FAM.getResult<AAManager>(func);
+ 
+   for (inst_iterator I = inst_begin(func), E = inst_end(func); I != E; ++I)
+     for (inst_iterator J = std::next(inst_begin(func)), E = inst_end(func); J != E; ++J)
+     { 
+       if(I != J) 
+       {
+         const Instruction& inst1 = *I;
+         if (DILocation *Loc = I->getDebugLoc()) { // Here I is an LLVM instruction
+             unsigned Line = Loc->getLine();
+             unsigned Column = I->getDebugLoc()->getColumn();
+             StringRef File = Loc->getFilename();
+             StringRef Dir = Loc->getDirectory();
+             bool ImplicitCode = Loc->isImplicitCode();
+             errs() << "inst1 file: "<< File << " line:column = " << Line << ":" << Column  << "\n"; 
+         }
+         const Instruction& inst2 = *J;
+         errs() << "inst1:" << inst1 << "\n";
+         errs() << "inst2:" << inst2 << "\n";
+         const AliasResult::Kind result = AAR.alias(&inst1, &inst2);
+         std::cout << "alias report: " << static_cast<int>(result) << std::endl;
+       }
+     }
+  } 
+*/
+  std::cout << "In LLVM Pass: sgproject:" << project << std::endl;
+  std::cout << "In LLVM Pass: calling unparser:"  << std::endl;
+  ::backend(project);
+
+  return PreservedAnalyses::all();
+}
+
+PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &FAM)
+{
+	unsigned int i = 0;
+	Function::arg_iterator arg_iter;
+	Function::iterator	bb_iter;
+	BasicBlock::iterator inst_iter;
+   
+        AAResults& AAR = FAM.getResult<AAManager>(F);
+
+  	outs() << "Name: " << F.getName() << "\n";
+	
+	// Return type
+	outs() << i << ". Return Type: " << *F.getReturnType() << "\n";
+	i += 1;
+
+	// Arguments
+	outs() << i << ". Arguments: ";
+	if (F.arg_size() == 0)
+	{
+		outs() << "No Arguments" << "\n";
+	}
+	else
+	{
+		for (arg_iter = F.arg_begin(); arg_iter != F.arg_end(); arg_iter++)
+		{
+			outs() << *arg_iter;
+			
+			if (arg_iter != F.arg_end())
+			{
+				outs() << ", ";
+			}
+		}
+
+		outs() << "\n";
+	}
+	i += 1;
+
+        //std::set<Value*> valueList;
+        std::map<Value*, std::pair<unsigned,unsigned>> valueList;
+	// BasicBlocks
+	outs() << i << ". IR: " << "\n";
+	if (F.isDeclaration() == true)
+	{
+		outs() << "Declaration. No IR" << "\n";
+	}
+	else
+	{
+		for (bb_iter = F.begin(); bb_iter != F.end(); bb_iter++)
+		{
+			// Each BB is made of one/more instructions.
+			// Print them.
+			for (inst_iter = (*bb_iter).begin(); inst_iter != (*bb_iter).end(); inst_iter++)
+			{
+				outs() << *inst_iter << "\n";
+                                std::pair<unsigned, unsigned> srcinfo;
+                                StringRef File;
+                                StringRef Dir;
+                                if (DILocation *Loc = inst_iter->getDebugLoc()) { // Here I is an LLVM instruction
+                                    //Line = Loc->getLine();
+                                    //Column = inst_iter->getDebugLoc()->getColumn();
+                                    srcinfo.first = Loc->getLine();
+                                    srcinfo.second = inst_iter->getDebugLoc()->getColumn();
+                                    File = Loc->getFilename();
+                                    Dir = Loc->getDirectory();
+                                    // outs() << "inst file: "<< File << " line:column = " << Line << ":" << Column  << "\n"; 
+                                }
+                                for(unsigned opi = 0; opi < inst_iter->getNumOperands() ; opi++)
+                                {
+                                  Value* val = inst_iter->getOperand (opi);
+                                  if(valueList.find(val) == valueList.end())
+                                     valueList.insert({val,srcinfo});
+                                }	
+			}
+		}
+	}
+
+        for(std::map<Value*, std::pair<unsigned,unsigned>>::iterator ii = valueList.begin(); ii != valueList.end(); ii++)
+        {
+          for(std::map<Value*, std::pair<unsigned,unsigned>>::iterator jj = std::next(ii); jj != valueList.end(); jj++)
+          {
+             Value* v1 = ii->first;
+             std::pair<unsigned,unsigned> src1 = ii->second;
+             Value* v2 = jj->first;
+             std::pair<unsigned,unsigned> src2 = jj->second;
+             const AliasResult::Kind result = AAR.alias(v1, v2);
+             if(static_cast<int>(result) != 0)
+             {
+               std::string init = "" ;
+               llvm::raw_string_ostream  os1(init);
+               llvm::raw_string_ostream  os2(init);
+               v1->print(os1);
+               v2->print(os2);
+               outs() << "(" << os1.str() << ")["<< src1.first << ":" << src1.second << "]" ;
+               outs() << " and ";
+               outs() << "(" << os2.str() << ")["<< src2.first << ":" << src2.second << "]" ;
+               outs() << " has alias:" << getAliasResult(result) << "\n";
+             }
+          }
+        }
+
+  	return PreservedAnalyses::all();
+}
+
+PreservedAnalyses ROSEPass::runOnGVariable(GlobalVariable &G)
+{	
+	outs() << G << "\n";
+	return PreservedAnalyses::all();
+}
+
+
+std::string ROSEPass::getAliasResult(AliasResult::Kind kind) const {
+   std::string result;
+   switch (kind) {
+   case AliasResult::Kind::NoAlias:
+      result =  "NoAlias";
+     break;
+   case AliasResult::Kind::MayAlias:
+      result =  "MayAlias";
+     break;
+   case AliasResult::Kind::PartialAlias:
+      result =  "PartialAlias";
+     break;
+   case AliasResult::Kind::MustAlias:
+      result =  "MustAlias";
+     break;
+   }
+   return result; 
+}
 
 //-----------------------------------------------------------------------------
 // New PM Registration
@@ -40,11 +208,15 @@ llvm::PassPluginLibraryInfo getROSEPassPluginInfo() {
           // Register ROSEPass so that it can be used when
           // specifying pass pipelines with `-passes=`.
           [](PassBuilder &PB) {
+            FunctionAnalysisManager FAM;
+            PB.registerFunctionAnalyses(FAM);
+            ModuleAnalysisManager MAM;
+            PB.registerModuleAnalyses(MAM);
             PB.registerPipelineParsingCallback(
-                [](StringRef Name, FunctionPassManager &FPM,
+                [](StringRef Name, ModulePassManager &MPM,
                    ArrayRef<PassBuilder::PipelineElement>) {
                   if (Name == "ROSEPass") {
-                    FPM.addPass(ROSEPass());
+                    MPM.addPass(ROSEPass());
                     return true;
                   }
                   return false;
@@ -52,9 +224,9 @@ llvm::PassPluginLibraryInfo getROSEPassPluginInfo() {
           // #2  Register ROSEPass as a step of an existing pipeline.
           // The insertion point is specified by using the
           // 'PB.registerPipelineStartEPCallback' callback. 
-          PB.registerPipelineStartEPCallback(
+          PB.registerOptimizerLastEPCallback(
               [&](ModulePassManager &MPM, OptimizationLevel Level) {
-                MPM.addPass(createModuleToFunctionPassAdaptor(ROSEPass()));
+                MPM.addPass(ROSEPass());
               });
 
 
