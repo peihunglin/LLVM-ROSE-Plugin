@@ -30,38 +30,15 @@ PreservedAnalyses ROSEPass::run(Module &M, ModuleAnalysisManager &MAM) {
   // Functions
   for (func_iter = M.begin(); func_iter != M.end(); func_iter++)
   {
-     outs() << header << "\n";
-     runOnFunction(*func_iter, FAM);
-  }
-/* 
-  for(auto f=funcList.begin(); f != funcList.end(); ++f)
-  {
-   Function &func = *f; 
-   AAResults& AAR = FAM.getResult<AAManager>(func);
- 
-   for (inst_iterator I = inst_begin(func), E = inst_end(func); I != E; ++I)
-     for (inst_iterator J = std::next(inst_begin(func)), E = inst_end(func); J != E; ++J)
-     { 
-       if(I != J) 
-       {
-         const Instruction& inst1 = *I;
-         if (DILocation *Loc = I->getDebugLoc()) { // Here I is an LLVM instruction
-             unsigned Line = Loc->getLine();
-             unsigned Column = I->getDebugLoc()->getColumn();
-             StringRef File = Loc->getFilename();
-             StringRef Dir = Loc->getDirectory();
-             bool ImplicitCode = Loc->isImplicitCode();
-             errs() << "inst1 file: "<< File << " line:column = " << Line << ":" << Column  << "\n"; 
-         }
-         const Instruction& inst2 = *J;
-         errs() << "inst1:" << inst1 << "\n";
-         errs() << "inst2:" << inst2 << "\n";
-         const AliasResult::Kind result = AAR.alias(&inst1, &inst2);
-         std::cout << "alias report: " << static_cast<int>(result) << std::endl;
-       }
+
+     // check the alias analysis only when the function definition is defined
+     if(!func_iter->isDeclaration())
+     {
+       outs() << header << "\n";
+       runOnFunction(*func_iter, FAM);
      }
-  } 
-*/
+  }
+
   std::cout << "In LLVM Pass: sgproject:" << project << std::endl;
   std::cout << "In LLVM Pass: calling unparser:"  << std::endl;
   ::backend(project);
@@ -106,7 +83,7 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
 	}
 	i += 1;
 
-        //std::set<Value*> valueList;
+        // map to record all operands, and their line/column info from the instruction
         std::map<Value*, std::pair<unsigned,unsigned>> valueList;
 	// BasicBlocks
 	outs() << i << ". IR: " << "\n";
@@ -126,7 +103,7 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
                                 std::pair<unsigned, unsigned> srcinfo;
                                 StringRef File;
                                 StringRef Dir;
-                                if (DILocation *Loc = inst_iter->getDebugLoc()) { // Here I is an LLVM instruction
+                                if (DILocation *Loc = inst_iter->getDebugLoc()) { // Here *inst_iter is an LLVM instruction
                                     //Line = Loc->getLine();
                                     //Column = inst_iter->getDebugLoc()->getColumn();
                                     srcinfo.first = Loc->getLine();
@@ -164,7 +141,7 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
                outs() << "(" << os1.str() << ")["<< src1.first << ":" << src1.second << "]" ;
                outs() << " and ";
                outs() << "(" << os2.str() << ")["<< src2.first << ":" << src2.second << "]" ;
-               outs() << " has alias:" << getAliasResult(result) << "\n";
+               outs() << " has alias: " << getAliasResult(result) << "\n";
              }
           }
         }
