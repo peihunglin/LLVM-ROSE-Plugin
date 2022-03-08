@@ -13,12 +13,24 @@ using namespace LLVMRosePass;
 // New PM implementation
 PreservedAnalyses ROSEPass::run(Module &M, ModuleAnalysisManager &MAM) {
 
-  std::cout <<"Module info:" << M.getInstructionCount ()  << std::endl;
+  // std::cout <<"Module info:" << M.getInstructionCount ()  << std::endl;
   auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
  
   auto  &funcList = M.getFunctionList();
   Module::global_iterator gv_iter;
   Module::iterator func_iter;
+
+// Get ROSE node mapping in the beginning
+  ROSENodeMap = getRoseNodeInfo();
+
+  for(auto a:ROSENodeMap)
+  {
+    SgNode* node = a.first;
+    std::pair<int,int> srcinfo  = a.second;
+    outs() << "SgNode: " << node << " src info: [" << srcinfo.first << ":" << srcinfo.second << "]\n";
+  }
+
+
   std::string header = "==================================================";
 
   for (gv_iter = M.global_begin(); gv_iter != M.global_end(); gv_iter++)
@@ -126,28 +138,64 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
         {
           for(std::map<Value*, std::pair<unsigned,unsigned>>::iterator jj = std::next(ii); jj != valueList.end(); jj++)
           {
+             std::string init = "" ;
              Value* v1 = ii->first;
              std::pair<unsigned,unsigned> src1 = ii->second;
+             std::string v1info;
+             llvm::raw_string_ostream  os1(init);
+             v1->print(os1);
+             v1info = "(" + os1.str() + ")[" + std::to_string(src1.first) + ":" + std::to_string(src1.second) + "]";
+             if(matchROSESrcInfo(src1))
+             {
+               std::pair<SgNode*, std::pair<unsigned ,unsigned >> RoseMapInfo = getMatchingROSESrcInfo(src1);
+               v1info += " ==> SgNode:" + RoseMapInfo.first->class_name()  + "[" + std::to_string(RoseMapInfo.second.first) + ":" + std::to_string(RoseMapInfo.second.second) + "]";
+             }
+
              Value* v2 = jj->first;
              std::pair<unsigned,unsigned> src2 = jj->second;
+             std::string v2info;
+             llvm::raw_string_ostream  os2(init);
+             v2->print(os2);
+             v2info = "(" + os2.str() + ")[" + std::to_string(src2.first) + ":" + std::to_string(src2.second) + "]";
+             if(matchROSESrcInfo(src2))
+             {
+               std::pair<SgNode*, std::pair<unsigned ,unsigned >> RoseMapInfo = getMatchingROSESrcInfo(src2);
+               v2info += " ==> SgNode:" + RoseMapInfo.first->class_name()  + "[" + std::to_string(RoseMapInfo.second.first) + ":" + std::to_string(RoseMapInfo.second.second) + "]";
+             }
+
              const AliasResult::Kind result = AAR.alias(v1, v2);
              if(static_cast<int>(result) != 0)
              {
-               std::string init = "" ;
-               llvm::raw_string_ostream  os1(init);
-               llvm::raw_string_ostream  os2(init);
-               v1->print(os1);
-               v2->print(os2);
-               outs() << "(" << os1.str() << ")["<< src1.first << ":" << src1.second << "]" ;
-               outs() << " and ";
-               outs() << "(" << os2.str() << ")["<< src2.first << ":" << src2.second << "]" ;
-               outs() << " has alias: " << getAliasResult(result) << "\n";
+                outs() <<  getAliasResult(result) << ":\n";
+                outs() << "\t op1: " << v1info << "\n" ;
+                outs() << "\t op2: " << v2info << "\n" ;
              }
           }
         }
 
   	return PreservedAnalyses::all();
 }
+
+bool ROSEPass::matchROSESrcInfo(std::pair<unsigned,unsigned> llvmsrcinfo)
+{
+  for(auto a : ROSEPass::ROSENodeMap)
+  {
+      if (a.second == llvmsrcinfo )
+        return true;
+  }
+  return false;
+}
+
+std::pair<SgNode*, std::pair<unsigned ,unsigned >> ROSEPass::getMatchingROSESrcInfo(std::pair<unsigned,unsigned> llvmsrcinfo)
+{
+  for(auto a : ROSEPass::ROSENodeMap)
+  {
+      if (a.second == llvmsrcinfo )
+        return a;
+  }
+  return {nullptr,{0,0}};
+}
+
 
 PreservedAnalyses ROSEPass::runOnGVariable(GlobalVariable &G)
 {	
@@ -175,6 +223,36 @@ std::string ROSEPass::getAliasResult(AliasResult::Kind kind) const {
    return result; 
 }
 
+std::map<SgNode*, std::pair<unsigned,unsigned>> ROSEPass::getRoseNodeInfo()
+{
+  nodeTraversal travese;
+  travese.traverseInputFiles(project,preorder);
+  return travese.getNodeMap();
+}
+
+void nodeTraversal::push_map_record(SgNode* node, std::pair<unsigned,unsigned> srcInfo)
+{
+  if(nodeTraversal::m.find(node) == nodeTraversal::m.end())
+  {
+    nodeTraversal::m.insert({node, srcInfo});
+  }
+  else
+  {
+    outs() << "SgNode " << node << " is pushed already\n" ;
+  }
+}
+
+void nodeTraversal::visit(SgNode* n)
+{
+  SgLocatedNode* locatedNode = isSgLocatedNode(n);
+  if(locatedNode)
+  {
+     Sg_File_Info* fileInfo = locatedNode->get_file_info();
+     std::pair<unsigned , unsigned > srcinfo = std::make_pair((unsigned)fileInfo->get_line(), (unsigned)fileInfo->get_col());
+     push_map_record(locatedNode, srcinfo); 
+  }
+
+}
 //-----------------------------------------------------------------------------
 // New PM Registration
 //-----------------------------------------------------------------------------
