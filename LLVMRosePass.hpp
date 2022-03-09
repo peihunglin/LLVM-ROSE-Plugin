@@ -13,6 +13,7 @@
 
 
 #include "rose.h"
+#include "SgNodeHelper.h"
 using namespace llvm;
 
 namespace LLVMRosePass{
@@ -24,18 +25,22 @@ class ROSEPass : public PassInfoMixin<ROSEPass> {
 public:
   std::map<SgNode*, std::pair<unsigned ,unsigned >> ROSENodeMap;
 
+  // run the pass on the module
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM);
-
+  
   PreservedAnalyses runOnFunction(Function &F, FunctionAnalysisManager &FAM);
 
   PreservedAnalyses runOnGVariable(GlobalVariable &G);
-
+  // get the aliias result in string output
   std::string getAliasResult(AliasResult::Kind kind) const ;
-
+  // get the map to record ROSE SgLocatedNode and src line/column
   std::map<SgNode*, std::pair<unsigned ,unsigned >> getRoseNodeInfo();
-
+  // check if a SgLocatedNode has same line/column 
   bool matchROSESrcInfo(std::pair<unsigned,unsigned>);
+  // get the line/column from the matched ROSE SgLocatedNode 
   std::pair<SgNode*, std::pair<unsigned ,unsigned >> getMatchingROSESrcInfo(std::pair<unsigned,unsigned>);
+// get the operand information into a single string
+  std::string getOperandInfo(Value* v, std::pair<unsigned ,unsigned > srcinfo);
 };
 
 

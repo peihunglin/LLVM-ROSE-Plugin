@@ -111,7 +111,6 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
 			// Print them.
 			for (inst_iter = (*bb_iter).begin(); inst_iter != (*bb_iter).end(); inst_iter++)
 			{
-				outs() << *inst_iter << "\n";
                                 std::pair<unsigned, unsigned> srcinfo;
                                 StringRef File;
                                 StringRef Dir;
@@ -130,6 +129,7 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
                                   if(valueList.find(val) == valueList.end())
                                      valueList.insert({val,srcinfo});
                                 }	
+				outs() << "[" << srcinfo.first << ":" << srcinfo.second << "] " <<  *inst_iter << "\n";
 			}
 		}
 	}
@@ -141,27 +141,11 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
              std::string init = "" ;
              Value* v1 = ii->first;
              std::pair<unsigned,unsigned> src1 = ii->second;
-             std::string v1info;
-             llvm::raw_string_ostream  os1(init);
-             v1->print(os1);
-             v1info = "(" + os1.str() + ")[" + std::to_string(src1.first) + ":" + std::to_string(src1.second) + "]";
-             if(matchROSESrcInfo(src1))
-             {
-               std::pair<SgNode*, std::pair<unsigned ,unsigned >> RoseMapInfo = getMatchingROSESrcInfo(src1);
-               v1info += " ==> SgNode:" + RoseMapInfo.first->class_name()  + "[" + std::to_string(RoseMapInfo.second.first) + ":" + std::to_string(RoseMapInfo.second.second) + "]";
-             }
+             std::string v1info = getOperandInfo(v1, src1);
 
              Value* v2 = jj->first;
              std::pair<unsigned,unsigned> src2 = jj->second;
-             std::string v2info;
-             llvm::raw_string_ostream  os2(init);
-             v2->print(os2);
-             v2info = "(" + os2.str() + ")[" + std::to_string(src2.first) + ":" + std::to_string(src2.second) + "]";
-             if(matchROSESrcInfo(src2))
-             {
-               std::pair<SgNode*, std::pair<unsigned ,unsigned >> RoseMapInfo = getMatchingROSESrcInfo(src2);
-               v2info += " ==> SgNode:" + RoseMapInfo.first->class_name()  + "[" + std::to_string(RoseMapInfo.second.first) + ":" + std::to_string(RoseMapInfo.second.second) + "]";
-             }
+             std::string v2info = getOperandInfo(v2, src2);
 
              const AliasResult::Kind result = AAR.alias(v1, v2);
              if(static_cast<int>(result) != 0)
@@ -221,6 +205,23 @@ std::string ROSEPass::getAliasResult(AliasResult::Kind kind) const {
      break;
    }
    return result; 
+}
+
+std::string ROSEPass::getOperandInfo(Value* v, std::pair<unsigned,unsigned> srcinfo)
+{
+  std::string init = "" ;
+  std::string info;
+  llvm::raw_string_ostream  os(init);
+  v->printAsOperand(os);
+  info = "\t src info: [" + std::to_string(srcinfo.first) + ":" + std::to_string(srcinfo.second) + "]\n";
+  info += "\t\t LLVM operand info: (" + os.str() + ")\n";
+  if(matchROSESrcInfo(srcinfo))
+  {
+    std::pair<SgNode*, std::pair<unsigned ,unsigned >> RoseMapInfo = getMatchingROSESrcInfo(srcinfo);
+    std::string SgNodeInfo = RoseMapInfo.first->unparseToString();
+    info += "\t\t ROSE node Info:" + SgNodeInfo  + "\n";
+  }
+  return info;
 }
 
 std::map<SgNode*, std::pair<unsigned,unsigned>> ROSEPass::getRoseNodeInfo()
