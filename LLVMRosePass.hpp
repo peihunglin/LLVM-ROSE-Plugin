@@ -22,8 +22,11 @@ namespace LLVMRosePass{
 class ROSEPass : public PassInfoMixin<ROSEPass> {
   // Main entry point, takes IR unit to run the pass on (&M) and the
   // corresponding pass manager (to be queried if need be)
+bool isDebugInfoAvail = false;
+
+
 public:
-  std::map<SgNode*, std::pair<unsigned ,unsigned >> ROSENodeMap;
+  std::map<SgNode*, std::pair<int ,int >> ROSENodeMap;
 
   // run the pass on the module
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM);
@@ -31,27 +34,32 @@ public:
   PreservedAnalyses runOnFunction(Function &F, FunctionAnalysisManager &FAM);
 
   PreservedAnalyses runOnGVariable(GlobalVariable &G);
+
+  // check if debug option, -g, is given
+  void checkCompiledWithDebugInfo(const Module& M);
+  bool hasDebugInfo(){return isDebugInfoAvail;};
+
   // get the aliias result in string output
   std::string getAliasResult(AliasResult::Kind kind) const ;
   // get the map to record ROSE SgLocatedNode and src line/column
-  std::map<SgNode*, std::pair<unsigned ,unsigned >> getRoseNodeInfo();
+  std::map<SgNode*, std::pair<int ,int >> getRoseNodeInfo();
   // check if a SgLocatedNode has same line/column 
-  bool matchROSESrcInfo(std::pair<unsigned,unsigned>);
+  bool matchROSESrcInfo(std::pair<int,int>);
   // get the line/column from the matched ROSE SgLocatedNode 
-  std::pair<SgNode*, std::pair<unsigned ,unsigned >> getMatchingROSESrcInfo(std::pair<unsigned,unsigned>);
+  std::pair<SgNode*, std::pair<int ,int >> getMatchingROSESrcInfo(std::pair<int,int>);
 // get the operand information into a single string
-  std::string getOperandInfo(Value* v, std::pair<unsigned ,unsigned > srcinfo);
+  std::string getOperandInfo(Value* v, std::pair<int ,int > srcinfo);
 };
 
 
 class nodeTraversal : public AstSimpleProcessing
 {
   public:
-      typedef std::map<SgNode*, std::pair<unsigned ,unsigned >> node_map_t; 
+      typedef std::map<SgNode*, std::pair<int ,int >> node_map_t; 
       const node_map_t  getNodeMap() const {return m;}
 
       virtual void visit(SgNode* n);
-      void push_map_record(SgNode* node, std::pair<unsigned ,unsigned > srcInfo);
+      void push_map_record(SgNode* node, std::pair<int ,int > srcInfo);
   private:
       node_map_t m;
 };

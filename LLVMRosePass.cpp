@@ -15,6 +15,9 @@ PreservedAnalyses ROSEPass::run(Module &M, ModuleAnalysisManager &MAM) {
 
   // std::cout <<"Module info:" << M.getInstructionCount ()  << std::endl;
   auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
+
+  // check if debug information is given
+  checkCompiledWithDebugInfo(M);  
  
   auto  &funcList = M.getFunctionList();
   Module::global_iterator gv_iter;
@@ -96,7 +99,7 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
 	i += 1;
 
         // map to record all operands, and their line/column info from the instruction
-        std::map<Value*, std::pair<unsigned,unsigned>> valueList;
+        std::map<Value*, std::pair<int,int>> valueList;
 	// BasicBlocks
 	outs() << i << ". IR: " << "\n";
 	if (F.isDeclaration() == true)
@@ -111,9 +114,10 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
 			// Print them.
 			for (inst_iter = (*bb_iter).begin(); inst_iter != (*bb_iter).end(); inst_iter++)
 			{
-                                std::pair<unsigned, unsigned> srcinfo;
+                                std::pair<int, int> srcinfo;
                                 StringRef File;
                                 StringRef Dir;
+                                if(hasDebugInfo())
                                 if (DILocation *Loc = inst_iter->getDebugLoc()) { // Here *inst_iter is an LLVM instruction
                                     //Line = Loc->getLine();
                                     //Column = inst_iter->getDebugLoc()->getColumn();
@@ -128,23 +132,25 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
                                   Value* val = inst_iter->getOperand (opi);
                                   if(valueList.find(val) == valueList.end())
                                      valueList.insert({val,srcinfo});
-                                }	
-				outs() << "[" << srcinfo.first << ":" << srcinfo.second << "] " <<  *inst_iter << "\n";
+                                }
+                                if(hasDebugInfo())	
+				  outs() << "[" << srcinfo.first << ":" << srcinfo.second << "] ";
+                                outs()  <<  *inst_iter << "\n";
 			}
 		}
 	}
 
-        for(std::map<Value*, std::pair<unsigned,unsigned>>::iterator ii = valueList.begin(); ii != valueList.end(); ii++)
+        for(std::map<Value*, std::pair<int,int>>::iterator ii = valueList.begin(); ii != valueList.end(); ii++)
         {
-          for(std::map<Value*, std::pair<unsigned,unsigned>>::iterator jj = std::next(ii); jj != valueList.end(); jj++)
+          for(std::map<Value*, std::pair<int,int>>::iterator jj = std::next(ii); jj != valueList.end(); jj++)
           {
              std::string init = "" ;
              Value* v1 = ii->first;
-             std::pair<unsigned,unsigned> src1 = ii->second;
+             std::pair<int,int> src1 = ii->second;
              std::string v1info = getOperandInfo(v1, src1);
 
              Value* v2 = jj->first;
-             std::pair<unsigned,unsigned> src2 = jj->second;
+             std::pair<int,int> src2 = jj->second;
              std::string v2info = getOperandInfo(v2, src2);
 
              const AliasResult::Kind result = AAR.alias(v1, v2);
@@ -160,7 +166,11 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
   	return PreservedAnalyses::all();
 }
 
-bool ROSEPass::matchROSESrcInfo(std::pair<unsigned,unsigned> llvmsrcinfo)
+void ROSEPass::checkCompiledWithDebugInfo(const Module& M) {
+  isDebugInfoAvail = (M.getNamedMetadata("llvm.dbg.cu") != NULL);
+}
+
+bool ROSEPass::matchROSESrcInfo(std::pair<int,int> llvmsrcinfo)
 {
   for(auto a : ROSEPass::ROSENodeMap)
   {
@@ -170,7 +180,7 @@ bool ROSEPass::matchROSESrcInfo(std::pair<unsigned,unsigned> llvmsrcinfo)
   return false;
 }
 
-std::pair<SgNode*, std::pair<unsigned ,unsigned >> ROSEPass::getMatchingROSESrcInfo(std::pair<unsigned,unsigned> llvmsrcinfo)
+std::pair<SgNode*, std::pair<int ,int >> ROSEPass::getMatchingROSESrcInfo(std::pair<int,int> llvmsrcinfo)
 {
   for(auto a : ROSEPass::ROSENodeMap)
   {
@@ -207,31 +217,34 @@ std::string ROSEPass::getAliasResult(AliasResult::Kind kind) const {
    return result; 
 }
 
-std::string ROSEPass::getOperandInfo(Value* v, std::pair<unsigned,unsigned> srcinfo)
+std::string ROSEPass::getOperandInfo(Value* v, std::pair<int,int> srcinfo)
 {
   std::string init = "" ;
   std::string info;
   llvm::raw_string_ostream  os(init);
   v->printAsOperand(os);
-  info = "\t src info: [" + std::to_string(srcinfo.first) + ":" + std::to_string(srcinfo.second) + "]\n";
+  if(hasDebugInfo())
+    info = "\t src info: [" + std::to_string(srcinfo.first) + ":" + std::to_string(srcinfo.second) + "]\n";
+  else
+    info = "";
   info += "\t\t LLVM operand info: (" + os.str() + ")\n";
-  if(matchROSESrcInfo(srcinfo))
+  if(hasDebugInfo() && matchROSESrcInfo(srcinfo))
   {
-    std::pair<SgNode*, std::pair<unsigned ,unsigned >> RoseMapInfo = getMatchingROSESrcInfo(srcinfo);
+    std::pair<SgNode*, std::pair<int ,int >> RoseMapInfo = getMatchingROSESrcInfo(srcinfo);
     std::string SgNodeInfo = RoseMapInfo.first->unparseToString();
-    info += "\t\t ROSE node Info:" + SgNodeInfo  + "\n";
+    info += "\t\t ROSE node Info: " + SgNodeInfo  + "\n";
   }
   return info;
 }
 
-std::map<SgNode*, std::pair<unsigned,unsigned>> ROSEPass::getRoseNodeInfo()
+std::map<SgNode*, std::pair<int,int>> ROSEPass::getRoseNodeInfo()
 {
   nodeTraversal travese;
   travese.traverseInputFiles(project,preorder);
   return travese.getNodeMap();
 }
 
-void nodeTraversal::push_map_record(SgNode* node, std::pair<unsigned,unsigned> srcInfo)
+void nodeTraversal::push_map_record(SgNode* node, std::pair<int,int> srcInfo)
 {
   if(nodeTraversal::m.find(node) == nodeTraversal::m.end())
   {
@@ -249,7 +262,7 @@ void nodeTraversal::visit(SgNode* n)
   if(locatedNode)
   {
      Sg_File_Info* fileInfo = locatedNode->get_file_info();
-     std::pair<unsigned , unsigned > srcinfo = std::make_pair((unsigned)fileInfo->get_line(), (unsigned)fileInfo->get_col());
+     std::pair<int , int> srcinfo = std::make_pair(fileInfo->get_line(), fileInfo->get_col());
      push_map_record(locatedNode, srcinfo); 
   }
 
