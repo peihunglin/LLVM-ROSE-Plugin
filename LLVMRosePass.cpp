@@ -69,6 +69,7 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
 	BasicBlock::iterator inst_iter;
    
         AAResults& AAR = FAM.getResult<AAManager>(F);
+        DependenceInfo& Dinfo = FAM.getResult<DependenceAnalysis >(F);
 
   	outs() << "Name: " << F.getName() << "\n";
 	
@@ -100,6 +101,7 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
 
         // map to record all operands, and their line/column info from the instruction
         std::map<Value*, std::pair<int,int>> valueList;
+        std::map<Instruction*, std::pair<int,int>> instList;
 	// BasicBlocks
 	outs() << i << ". IR: " << "\n";
 	if (F.isDeclaration() == true)
@@ -127,6 +129,11 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
                                     Dir = Loc->getDirectory();
                                     // outs() << "inst file: "<< File << " line:column = " << Line << ":" << Column  << "\n"; 
                                 }
+
+                                Instruction* inst = &*inst_iter;
+                                if(instList.find(inst) == instList.end())
+                                   instList.insert({inst,srcinfo});
+
                                 for(unsigned opi = 0; opi < inst_iter->getNumOperands() ; opi++)
                                 {
                                   Value* val = inst_iter->getOperand (opi);
@@ -140,11 +147,39 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
 		}
 	}
 
+        outs()  << "================================================== " << "\n";
+        outs()  << "Data dependence analysis: " << "\n";
+        for(std::map<Instruction*, std::pair<int,int>>::iterator ii = instList.begin(); ii != instList.end(); ii++)
+        {
+          for(std::map<Instruction*, std::pair<int,int>>::iterator jj = std::next(ii); jj != instList.end(); jj++)
+          {
+             
+             std::string str1, str2;
+             Instruction* i1 = ii->first;
+             llvm::raw_string_ostream(str1) << *i1;
+             std::pair<int,int> src1 = ii->second;
+             std::string i1info = getInstInfo(i1, src1);
+
+             Instruction* i2 = jj->first;
+             llvm::raw_string_ostream(str2) << *i2;
+             std::pair<int,int> src2 = jj->second;
+             std::string i2info = getInstInfo(i2, src2);
+
+             std::unique_ptr< Dependence >  DAresult = Dinfo.depends(i1, i2, false);
+             if(DAresult != nullptr)
+             {
+               outs() << getDAResult(DAresult) << "\n";
+               outs() << "\t inst 1: " << str1 << "\n" << i1info << "\n" ;
+               outs() << "\t inst 2: " << str2 << "\n" << i2info << "\n" ;
+             }
+          }
+        }
+        outs()  << "================================================== " << "\n";
+        outs()  << "Alias analysis: " << "\n";
         for(std::map<Value*, std::pair<int,int>>::iterator ii = valueList.begin(); ii != valueList.end(); ii++)
         {
           for(std::map<Value*, std::pair<int,int>>::iterator jj = std::next(ii); jj != valueList.end(); jj++)
           {
-             std::string init = "" ;
              Value* v1 = ii->first;
              std::pair<int,int> src1 = ii->second;
              std::string v1info = getOperandInfo(v1, src1);
@@ -198,6 +233,25 @@ PreservedAnalyses ROSEPass::runOnGVariable(GlobalVariable &G)
 }
 
 
+std::string ROSEPass::getDAResult(std::unique_ptr< Dependence >& result) const {
+   std::string ret;
+   if(result == nullptr)
+     ret = "No dependence"; 
+   else if(result->isInput ())
+     ret = "Input dependence"; 
+   else if(result->isOutput ())
+     ret = "Output dependence"; 
+   else if(result->isFlow ())
+     ret = "Flow dependence"; 
+   else if(result->isAnti ())
+     ret = "Anti dependence"; 
+   else if(result->isOrdered ())
+     ret = "Ordered dependence"; 
+   else if(result->isUnordered ())
+     ret = "Unordered dependence"; 
+   return ret;
+}
+
 std::string ROSEPass::getAliasResult(AliasResult::Kind kind) const {
    std::string result;
    switch (kind) {
@@ -215,6 +269,28 @@ std::string ROSEPass::getAliasResult(AliasResult::Kind kind) const {
      break;
    }
    return result; 
+}
+
+std::string ROSEPass::getInstInfo(Instruction* i, std::pair<int,int> srcinfo)
+{
+  std::string init = "" ;
+  std::string info;
+  llvm::raw_string_ostream  os(init);
+  if(hasDebugInfo())
+    info = "\t src info: [" + std::to_string(srcinfo.first) + ":" + std::to_string(srcinfo.second) + "]\n";
+  else
+    info = "";
+  if(hasDebugInfo() && matchROSESrcInfo(srcinfo))
+  {
+    std::pair<SgNode*, std::pair<int ,int >> RoseMapInfo = getMatchingROSESrcInfo(srcinfo);
+    std::string SgNodeInfo = RoseMapInfo.first->unparseToString();
+    if(RoseMapInfo.second.first != 0)
+      info += "\t\t ROSE node Info: " + SgNodeInfo  + "\n";
+    else
+      info += "\t\t ROSE node mapped to SgGlobal at line 0 \n";
+
+  }
+  return info;
 }
 
 std::string ROSEPass::getOperandInfo(Value* v, std::pair<int,int> srcinfo)

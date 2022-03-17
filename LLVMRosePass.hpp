@@ -10,6 +10,8 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include <llvm/IR/DebugLoc.h>
 #include <llvm/IR/DebugInfoMetadata.h>
+#include "llvm/Analysis/DependenceAnalysis.h"
+
 
 
 #include "rose.h"
@@ -39,6 +41,8 @@ public:
   void checkCompiledWithDebugInfo(const Module& M);
   bool hasDebugInfo(){return isDebugInfoAvail;};
 
+  // determine the dependence analysis report  
+  std::string getDAResult(std::unique_ptr< Dependence >& result) const;
   // get the aliias result in string output
   std::string getAliasResult(AliasResult::Kind kind) const ;
   // get the map to record ROSE SgLocatedNode and src line/column
@@ -49,6 +53,7 @@ public:
   std::pair<SgNode*, std::pair<int ,int >> getMatchingROSESrcInfo(std::pair<int,int>);
 // get the operand information into a single string
   std::string getOperandInfo(Value* v, std::pair<int ,int > srcinfo);
+  std::string getInstInfo(Instruction* i, std::pair<int ,int > srcinfo);
 };
 
 
