@@ -1,14 +1,17 @@
-#include "LLVMRosePass.hpp"
+#include "RoseConnectionLLVMPassPlugin.hpp"
 
 extern SgProject* project;
-
+boost::property_tree::ptree pt;
+boost::property_tree::ptree ptIR;
 //-----------------------------------------------------------------------------
 // ROSEPass implementation
 //-----------------------------------------------------------------------------
 // No need to expose the internals of the pass to the outside world - keep
 // everything in an anonymous namespace.
 
-using namespace LLVMRosePass;
+using namespace llvm;
+
+using namespace RoseConnectionLLVMPassPlugin;
 
 // New PM implementation
 PreservedAnalyses ROSEPass::run(Module &M, ModuleAnalysisManager &MAM) {
@@ -28,11 +31,32 @@ PreservedAnalyses ROSEPass::run(Module &M, ModuleAnalysisManager &MAM) {
 
   for(auto a:ROSENodeMap)
   {
+    std::string jsonval = "";
     SgNode* node = a.first;
     std::pair<int,int> srcinfo  = a.second;
-    outs() << "SgNode: " << node << " src info: [" << srcinfo.first << ":" << srcinfo.second << "]\n";
+    outs() << "SgNode(" << node << "):" << " src info: [" << srcinfo.first << ":" << srcinfo.second << "]  \tclass Name:" << node->class_name () << "\n";
+  
+    std::stringstream addrss;
+    addrss << node;  
+    std::string nodeAddr = addrss.str(); 
+    pt.put(nodeAddr, jsonval);
+    jsonval = nodeAddr+".ASTname";
+    pt.put(jsonval,node->class_name ());
+    jsonval = nodeAddr+".beginLine";
+    pt.put(jsonval,srcinfo.first);
+    jsonval = nodeAddr+".beginColumn";
+    pt.put(jsonval,srcinfo.second);
   }
 
+   std::stringstream ss;
+   boost::property_tree::json_parser::write_json(ss, pt);
+   std::ofstream jfile;
+   jfile.open("ROSEsrcLoc.json",std::ios::out);
+   jfile << ss.rdbuf();
+   jfile.close();
+   
+   ss.str("");
+   ss.clear();
 
   std::string header = "==================================================";
 
@@ -54,8 +78,15 @@ PreservedAnalyses ROSEPass::run(Module &M, ModuleAnalysisManager &MAM) {
      }
   }
 
+   boost::property_tree::json_parser::write_json(ss, ptIR);
+   jfile.open("LLVMLoc.json",std::ios::out);
+   jfile << ss.rdbuf();
+   jfile.close();
+   
+   ss.str("");
+   ss.clear();
   std::cout << "In LLVM Pass: sgproject:" << project << std::endl;
-  std::cout << "In LLVM Pass: calling unparser:"  << std::endl;
+  std::cout << "In LLVM Pass: calling unparser"  << std::endl;
   ::backend(project);
 
   return PreservedAnalyses::all();
@@ -68,10 +99,14 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
 	Function::iterator	bb_iter;
 	BasicBlock::iterator inst_iter;
    
+
         AAResults& AAR = FAM.getResult<AAManager>(F);
         DependenceInfo& Dinfo = FAM.getResult<DependenceAnalysis >(F);
 
-  	outs() << "Name: " << F.getName() << "\n";
+        std::string funcName = F.getName().str(); 
+ 	outs() << "Name: " << funcName << "\n";
+      
+        //ptIR.put(funcName,jsonval);
 	
 	// Return type
 	outs() << i << ". Return Type: " << *F.getReturnType() << "\n";
@@ -116,6 +151,14 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
 			// Print them.
 			for (inst_iter = (*bb_iter).begin(); inst_iter != (*bb_iter).end(); inst_iter++)
 			{
+                                std::string jsonval = "";
+                                std::stringstream address;
+                                address << &(*inst_iter);  
+                                //jsonval = funcName+".instruction";
+                                ptIR.put(address.str(), jsonval);
+                                std::string nodeAddr = funcName + "." + address.str(); 
+                                //ptIR.put(jsonval, address.str());
+
                                 std::pair<int, int> srcinfo;
                                 StringRef File;
                                 StringRef Dir;
@@ -128,6 +171,16 @@ PreservedAnalyses ROSEPass::runOnFunction(Function &F, FunctionAnalysisManager &
                                     File = Loc->getFilename();
                                     Dir = Loc->getDirectory();
                                     // outs() << "inst file: "<< File << " line:column = " << Line << ":" << Column  << "\n"; 
+                                    std::string str1;
+                                    llvm::raw_string_ostream(str1) << *inst_iter;
+                                    jsonval = nodeAddr+".instruction";
+                                    ptIR.put(jsonval, str1);
+                                    jsonval = nodeAddr+".filename";
+                                    ptIR.put(jsonval, File.str());
+                                    jsonval = nodeAddr+".beginLine";
+                                    ptIR.put(jsonval, std::to_string(srcinfo.first));
+                                    jsonval = nodeAddr+".beginColumn";
+                                    ptIR.put(jsonval, std::to_string(srcinfo.second));
                                 }
 
                                 Instruction* inst = &*inst_iter;
@@ -308,7 +361,11 @@ std::string ROSEPass::getOperandInfo(Value* v, std::pair<int,int> srcinfo)
   {
     std::pair<SgNode*, std::pair<int ,int >> RoseMapInfo = getMatchingROSESrcInfo(srcinfo);
     std::string SgNodeInfo = RoseMapInfo.first->unparseToString();
-    info += "\t\t ROSE node Info: " + SgNodeInfo  + "\n";
+    if(srcinfo.first != 0)
+      info += "\t\t ROSE node Info: " + SgNodeInfo  + "\n";
+    else
+      info += "\t\t ROSE node Info: SgGlobal \n";
+
   }
   return info;
 }

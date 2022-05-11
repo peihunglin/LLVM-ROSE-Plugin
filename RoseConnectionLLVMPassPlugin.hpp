@@ -1,6 +1,6 @@
-#ifndef LLVM_ROSE_PASS_H                                        
+#ifndef ROSE_CONNECTION_LLVM_PASS_PLUGIN_H                                        
 
-#define LLVM_ROSE_PASS_H
+#define ROSE_CONNECTION_LLVM_PASS_PLUGIN_H
 
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -14,14 +14,16 @@
 
 
 
-#include "rose.h"
+#include <rose.h>
 #include "SgNodeHelper.h"
-using namespace llvm;
 
-namespace LLVMRosePass{
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/json_parser.hpp>
+#include <boost/optional.hpp>
+namespace RoseConnectionLLVMPassPlugin{
 
 // New PM implementation
-class ROSEPass : public PassInfoMixin<ROSEPass> {
+class ROSEPass : public llvm::PassInfoMixin<ROSEPass> {
   // Main entry point, takes IR unit to run the pass on (&M) and the
   // corresponding pass manager (to be queried if need be)
 bool isDebugInfoAvail = false;
@@ -31,20 +33,20 @@ public:
   std::map<SgNode*, std::pair<int ,int >> ROSENodeMap;
 
   // run the pass on the module
-  PreservedAnalyses run(Module &M, ModuleAnalysisManager &MAM);
+  llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM);
   
-  PreservedAnalyses runOnFunction(Function &F, FunctionAnalysisManager &FAM);
+  llvm::PreservedAnalyses runOnFunction(llvm::Function &F, llvm::FunctionAnalysisManager &FAM);
 
-  PreservedAnalyses runOnGVariable(GlobalVariable &G);
+  llvm::PreservedAnalyses runOnGVariable(llvm::GlobalVariable &G);
 
   // check if debug option, -g, is given
-  void checkCompiledWithDebugInfo(const Module& M);
+  void checkCompiledWithDebugInfo(const llvm::Module& M);
   bool hasDebugInfo(){return isDebugInfoAvail;};
 
   // determine the dependence analysis report  
-  std::string getDAResult(std::unique_ptr< Dependence >& result) const;
+  std::string getDAResult(std::unique_ptr< llvm::Dependence >& result) const;
   // get the aliias result in string output
-  std::string getAliasResult(AliasResult::Kind kind) const ;
+  std::string getAliasResult(llvm::AliasResult::Kind kind) const ;
   // get the map to record ROSE SgLocatedNode and src line/column
   std::map<SgNode*, std::pair<int ,int >> getRoseNodeInfo();
   // check if a SgLocatedNode has same line/column 
@@ -52,8 +54,8 @@ public:
   // get the line/column from the matched ROSE SgLocatedNode 
   std::pair<SgNode*, std::pair<int ,int >> getMatchingROSESrcInfo(std::pair<int,int>);
 // get the operand information into a single string
-  std::string getOperandInfo(Value* v, std::pair<int ,int > srcinfo);
-  std::string getInstInfo(Instruction* i, std::pair<int ,int > srcinfo);
+  std::string getOperandInfo(llvm::Value* v, std::pair<int ,int > srcinfo);
+  std::string getInstInfo(llvm::Instruction* i, std::pair<int ,int > srcinfo);
 };
 
 
@@ -70,4 +72,4 @@ class nodeTraversal : public AstSimpleProcessing
 };
 
 }
-#endif // LLVM_ROSE_PASS_H
+#endif // ROSE_CONNECTION_LLVM_PASS_PLUGIN_H
